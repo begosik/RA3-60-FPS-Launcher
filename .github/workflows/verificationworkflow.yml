@@ -8,11 +8,11 @@ on:
       asset:
         description: Installer asset in the private draft
         required: true
-        default: RA3FPS_Setup_0.3.5_NSIS.exe
+        default: RA3FPS_Setup_0.3.6_NSIS.exe
       sha256:
         description: SHA-256 of the candidate installer
         required: true
-        default: 927bf8dd6f9fe76fa4219b56e780382cc040cbb79a9ef3867271225b692d725a
+        default: 7862149eece52d1d3e697bd4a67b2f6bd10783fb0dba140122e01ec5426e5393
 permissions:
   contents: write
 jobs:
@@ -100,8 +100,8 @@ jobs:
             WCHAR c[128]={0},t[256]={0};GetClassNameW(h,c,128);DWORD pid=0;GetWindowThreadProcessId(h,&pid);
             fprintf(stderr,"WINDOW hwnd=%p pid=%lu\n",h,pid);fflush(stderr);
             if(!gettext(h,t,256))return !expired();
-            if(launcher?wcscmp(c,L"BegosikRA3FPS")!=0:wcsstr(t,L"RA3 60 FPS Patcher Setup")==0)return TRUE;
-            printf("PID=%lu\nHWND=%p\n",pid,h);fflush(stdout);line(h);EnumChildWindows(h,child,0);
+            if(launcher?wcscmp(c,L"BegosikRA3FPS")!=0:(wcsstr(t,L"60 FPS v2 Setup")==0&&wcsstr(t,L"RA3 60 FPS Patcher Setup")==0))return TRUE;
+            printf("PID=%lu\nHWND=%p\n",pid,h);fflush(stdout);value("TITLE=",t);line(h);EnumChildWindows(h,child,0);
             if(launcher){HWND check=GetDlgItem(h,102);unsigned old=(GetDlgItem(h,202)!=0)+(GetDlgItem(h,110)!=0)+(GetDlgItem(h,111)!=0);printf("CHECK_ENABLED=%d\nOBSOLETE_CONTROLS=%u\n",check&&IsWindowEnabled(check),old);fflush(stdout);}
             if(action==1){HWND yes=GetDlgItem(h,IDYES);if(yes){DWORD_PTR result=0;SendMessageTimeoutW(yes,BM_CLICK,0,0,SMTO_ABORTIFHUNG|SMTO_BLOCK,100,&result);}else PostMessageW(h,WM_CLOSE,0,0);}
             if(action==2){HWND next=GetDlgItem(h,IDOK);DWORD_PTR result=0;if(!next||!SendMessageTimeoutW(next,BM_CLICK,0,0,SMTO_ABORTIFHUNG|SMTO_BLOCK,100,&result))fprintf(stderr,"NEXT_BUTTON_UNAVAILABLE\n");}
@@ -118,10 +118,18 @@ jobs:
             if(!code){code=RegSetValueExW(key,L"InstallLocation",0,REG_SZ,(const BYTE*)path,(DWORD)((wcslen(path)+1)*sizeof(WCHAR)));RegCloseKey(key);}
             printf("REGISTRY_RESULT=%ld\n",code);return code?1:0;
           }
+          static int brand(void){
+           HKEY key=0;LONG code=RegOpenKeyExW(HKEY_CURRENT_USER,L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\BegosikRA3FPS",0,KEY_QUERY_VALUE|KEY_WOW64_64KEY,&key);
+           if(code)return 1;
+           const WCHAR*names[]={L"DisplayName",L"DisplayVersion",L"InstallLocation"};const char*labels[]={"ARP_NAME=","ARP_VERSION=","ARP_PATH="};
+           for(int i=0;i<3;i++){WCHAR text[4096]={0};DWORD type=0,bytes=sizeof(text);code=RegQueryValueExW(key,names[i],0,&type,(BYTE*)text,&bytes);if(code||type!=REG_SZ){RegCloseKey(key);return 1;}value(labels[i],text);}
+           RegCloseKey(key);return 0;
+          }
           int wmain(int argc,WCHAR**argv){
             fprintf(stderr,"START argc=%d\n",argc);fflush(stderr);
             if(argc>2&&wcscmp(argv[1],L"run")==0)return command(argv[2]);
             if(argc>2&&wcscmp(argv[1],L"fake-arp")==0)return fake_arp(argv[2]);
+            if(argc>1&&wcscmp(argv[1],L"brand")==0)return brand();
             if(argc>1&&wcscmp(argv[1],L"env")==0){WCHAR path[4096]={0};if(!GetEnvironmentVariableW(L"LOCALAPPDATA",path,4096))return 1;value("LOCALAPPDATA=",path);return 0;}
             launcher=argc>1&&wcscmp(argv[1],L"launcher")==0;
             action=argc>2&&wcscmp(argv[2],L"close")==0?1:argc>2&&wcscmp(argv[2],L"next")==0?2:0;
@@ -196,6 +204,7 @@ jobs:
               return prefix/'drive_c'/path[3:].replace(chr(92),'/')
           def current_ui(text):
               assert 'OBSOLETE_CONTROLS=0' in text,'Removed Reference/Replay controls still exist'
+              assert re.search(r'^TITLE=60 FPS v2$',text,re.M),'Wrong product window title'
               assert 'Reference mode' not in text and 'Replay...' not in text,'Removed UI text is still visible'
           def retired_settings(root):
               data=(root/'settings.ini').read_bytes()
@@ -204,7 +213,7 @@ jobs:
               assert not settings.has_option('Launcher','Reference30'),'Old Reference30 preference was not retired'
               assert not settings.has_option('Experiment','Replay'),'Old Replay preference was not retired'
               assert settings.get('Verification','Keep')=='legacy-setting-sentinel','Startup removed unrelated settings'
-          def idle_render(name,version,quiet):
+          def idle_render(name,version,quiet,caption=None):
               deadline=time.monotonic()+90
               while time.monotonic()<deadline:
                   text=run([wine,probe,'launcher'],name+'-settle',15)
@@ -213,7 +222,8 @@ jobs:
               else:raise AssertionError('Update check did not settle before idle rendering measurement')
               subprocess.run(['xdotool','mousemove','2','2'],check=True)
               time.sleep(2)
-              title='^RA3 60 FPS Launcher '+re.escape(version)+'$'
+              expected_title=caption or ('RA3 60 FPS Launcher '+version)
+              title='^'+re.escape(expected_title)+'$'
               ids=subprocess.run(['xdotool','search','--onlyvisible','--name',title],capture_output=True,text=True,check=True).stdout.split()
               assert len(ids)==1,('Ambiguous launcher X window',ids)
               d=display.Display();assert d.has_extension('DAMAGE'),'XDamage is required for the rendering regression'
@@ -271,6 +281,7 @@ jobs:
               # A real visible wizard must appear; a zero exit code is insufficient.
               wizard=start(command(setup),'wizard')
               _,text=ui('setup');assert 'Next' in text and 'Cancel' in text and 'Choose a folder' in text
+              assert re.search(r'^TITLE=60 FPS v2 Setup$',text,re.M),'Wrong setup branding'
               run([wine,probe,'setup','next'],'wizard-next')
               time.sleep(.5);_,directory_text=ui('setup')
               edits=[line[5:].strip() for line in directory_text.splitlines() if line.startswith('EDIT=')]
@@ -280,11 +291,15 @@ jobs:
               report['wizard']={'visible':True,'cancel_exit':wizard.returncode,'directory_default_correct':True}
               # A stale prior ARP path must not redirect an ordinary no-/D install.
               run(command(setup,'/S','/DESKTOP=0'),'default-noD-install',180)
+              brand_text=run([wine,probe,'brand'],'product-registration')
+              assert 'ARP_NAME=60 FPS v2' in brand_text and 'ARP_VERSION=0.3.6' in brand_text,'Wrong registered product branding'
+              arp_path=re.search(r'^ARP_PATH=(.+)$',brand_text,re.M).group(1).strip()
+              assert arp_path.lower().rstrip(chr(92))==default_path.lower(),'Registered product path changed'
               default_files={p.relative_to(default_root).as_posix() for p in default_root.rglob('*') if p.is_file()}
               default_cursors={p for p in default_files if p.startswith('assets/cursors/') and p.endswith('.ani')}
               default_required={'RA3FPS.exe','engine/ra3_1.12.game','profiles/ra3_1.12.rpf','Uninstall.exe','.ra3fps-nsis'}
               assert len(default_cursors)==79 and default_files==default_required|default_cursors,'Default install payload differs'
-              assert '0.3.5.0'.encode('utf-16le') in (default_root/'RA3FPS.exe').read_bytes(),'Wrong default-installed launcher version'
+              assert '0.3.6.0'.encode('utf-16le') in (default_root/'RA3FPS.exe').read_bytes(),'Wrong default-installed launcher version'
               assert {p.name:p.read_bytes() for p in fake.iterdir()}=={'keep.bin':b'fake-previous-installation-sentinel'},'Default install changed the previous ARP folder'
               # Actual Windows startup must ignore a historical 30-FPS switch
               # and a missing replay, retire only those own preference keys,
@@ -294,7 +309,7 @@ jobs:
               (default_root/'settings.ini').write_text('[Launcher]\nReference30=1\n[Experiment]\nReplay='+replay_pref+'\n[Verification]\nKeep=legacy-setting-sentinel\n')
               default_launcher=start(command(default_root/'RA3FPS.exe'),'default-launcher')
               _,default_ui=ui('launcher');current_ui(default_ui);retired_settings(default_root)
-              idle_render('candidate-idle','0.3.5',True)
+              idle_render('candidate-idle','0.3.6',True,'60 FPS v2')
               report['removed_features']={'passed':True,'reference_and_replay_controls_absent':True,'stale_settings_retired':True,'missing_replay_ignored':True,'one_60_FPS_profile':True}
               run([wine,probe,'launcher','close'],'default-close');default_launcher.wait(timeout=30)
               run(command(default_root/'Uninstall.exe','/S'),'default-uninstall',180)
@@ -309,7 +324,7 @@ jobs:
               cursors={p for p in files if p.startswith('assets/cursors/') and p.endswith('.ani')}
               required={'RA3FPS.exe','engine/ra3_1.12.game','profiles/ra3_1.12.rpf','Uninstall.exe','.ra3fps-nsis'}
               assert len(cursors)==79 and files==required|cursors,sorted(files-required-cursors)
-              assert '0.3.5.0'.encode('utf-16le') in (root/'RA3FPS.exe').read_bytes(),'Wrong launcher version'
+              assert '0.3.6.0'.encode('utf-16le') in (root/'RA3FPS.exe').read_bytes(),'Wrong launcher version'
               game=prefix/'drive_c/Game Fixture';game.mkdir();original=game/'RA3_1.12.game';original.write_bytes(b'unchanged-game-fixture')
               before=hashlib.sha256(original.read_bytes()).hexdigest()
               launcher=start(command(root/'RA3FPS.exe'),'launcher-before-update')
@@ -372,6 +387,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: RA3FPS-0.3.5-Wine-verification
+          name: RA3FPS-0.3.6-Wine-verification
           path: evidence
           retention-days: 7
