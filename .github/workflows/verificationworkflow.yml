@@ -64,15 +64,15 @@ jobs:
           pathlib.Path('candidate.exe').write_bytes(data)
           pathlib.Path('evidence/download.json').write_text(json.dumps({'draft':True,'asset':asset['name'],'bytes':len(data),'sha256':digest},indent=2))
           headers['Accept']='application/vnd.github+json'
-          baseline=json.load(open_request(urllib.request.Request(api+'/releases/tags/0.3.3',headers=headers)))
-          assert baseline['draft'] is False and baseline['tag_name']=='0.3.3','Baseline must be the public 0.3.3 release'
-          old_asset=next(a for a in baseline['assets'] if a['name']=='RA3FPS_Setup_0.3.3_NSIS.exe')
+          baseline=json.load(open_request(urllib.request.Request(api+'/releases/tags/0.3.4',headers=headers)))
+          assert baseline['draft'] is False and baseline['tag_name']=='0.3.4','Baseline must be the public 0.3.4 release'
+          old_asset=next(a for a in baseline['assets'] if a['name']=='RA3FPS_Setup_0.3.4_NSIS.exe')
           headers['Accept']='application/octet-stream'
           old_data=open_request(urllib.request.Request(api+'/releases/assets/'+str(old_asset['id']),headers=headers)).read()
           old_digest=hashlib.sha256(old_data).hexdigest()
-          assert old_digest=='8353b51fbeada647d31aa0793b4ddb7f2009bfb006a2b965c0d133ed660b1932' and len(old_data)==3811126,'Baseline installer bytes differ'
+          assert old_digest=='1b605293e2d7fb73f53bf095ce73649cf31ea89267c102d6bb220bc4949da4ce' and len(old_data)==3811989,'Baseline installer bytes differ'
           pathlib.Path('baseline.exe').write_bytes(old_data)
-          pathlib.Path('evidence/baseline-download.json').write_text(json.dumps({'draft':False,'version':'0.3.3','asset':old_asset['name'],'bytes':len(old_data),'sha256':old_digest},indent=2))
+          pathlib.Path('evidence/baseline-download.json').write_text(json.dumps({'draft':False,'version':'0.3.4','asset':old_asset['name'],'bytes':len(old_data),'sha256':old_digest},indent=2))
           PY
       - name: Build the read-only Windows UI probe
         run: |
@@ -249,12 +249,14 @@ jobs:
               else:assert result['damage_events']>=3,'The old 0.3.3 timer did not reproduce rendering activity; regression test is inconclusive'
           try:
               run([wine,'wineboot','-u'],'wineboot',180)
-              # Differential control: the exact public 0.3.3 launcher must still
-              # show timer-driven redraw activity before testing the fix.
+              # The current public baseline stays at 0.3.4 instead of updating
+              # itself. It still exposes the three Reference/Replay controls
+              # while retaining the already verified idle-rendering fix.
               baseline_root=prefix/'drive_c/RA3FPS Baseline'
               run(command(baseline_setup,'/S','/DESKTOP=0','/D='+win(baseline_root)),'baseline-install',180)
               baseline_launcher=start(command(baseline_root/'RA3FPS.exe'),'baseline-launcher')
-              ui('launcher');idle_render('baseline-idle','0.3.3',False)
+              _,baseline_ui=ui('launcher');assert 'OBSOLETE_CONTROLS=3' in baseline_ui,'The public baseline no longer reproduces the old Reference/Replay controls'
+              idle_render('baseline-idle','0.3.4',True)
               run([wine,probe,'launcher','close'],'baseline-close');baseline_launcher.wait(timeout=30)
               run(command(baseline_root/'Uninstall.exe','/S'),'baseline-uninstall',180)
               deadline=time.monotonic()+45
