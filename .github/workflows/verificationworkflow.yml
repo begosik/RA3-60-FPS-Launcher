@@ -248,8 +248,9 @@ jobs:
               run([wine,probe,'launcher','close'],'baseline-close');baseline_launcher.wait(timeout=30)
               run(command(baseline_root/'Uninstall.exe','/S'),'baseline-uninstall',180)
               deadline=time.monotonic()+45
-              while (baseline_root/'RA3FPS.exe').exists() and time.monotonic()<deadline:time.sleep(.4)
-              assert not (baseline_root/'RA3FPS.exe').exists(),'Baseline launcher was not removed'
+              while any((baseline_root/name).exists() for name in ('RA3FPS.exe','Uninstall.exe','.ra3fps-nsis')) and time.monotonic()<deadline:time.sleep(.4)
+              assert not any((baseline_root/name).exists() for name in ('RA3FPS.exe','Uninstall.exe','.ra3fps-nsis')),'Baseline launcher was not removed'
+              time.sleep(.5)
               local_text=run([wine,probe,'env'],'localappdata')
               local=re.search(r'^LOCALAPPDATA=(.+)$',local_text,re.M).group(1).strip()
               default_path=local+chr(92)+'Begosik'+chr(92)+'RA3FPS';default_root=host(default_path)
@@ -278,8 +279,9 @@ jobs:
               run([wine,probe,'launcher','close'],'default-close');default_launcher.wait(timeout=30)
               run(command(default_root/'Uninstall.exe','/S'),'default-uninstall',180)
               deadline=time.monotonic()+45
-              while (default_root/'RA3FPS.exe').exists() and time.monotonic()<deadline:time.sleep(.4)
-              assert not (default_root/'RA3FPS.exe').exists(),'Default launcher uninstall failed'
+              while any((default_root/name).exists() for name in default_required|default_cursors) and time.monotonic()<deadline:time.sleep(.4)
+              assert not any((default_root/name).exists() for name in default_required|default_cursors),'Default launcher uninstall failed'
+              time.sleep(.5)
               report['default_path_install']={'passed':True,'no_D_option':True,'path':default_path,'fake_previous_folder_unchanged':True}
               install='C:\\RA3FPS Verification';root=prefix/'drive_c/RA3FPS Verification'
               run(command(setup,'/S','/DESKTOP=0','/D='+install),'silent-install',180)
