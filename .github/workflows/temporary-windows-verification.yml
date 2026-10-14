@@ -14,7 +14,7 @@ on:
         required: true
         default: 259653e4afc9f1de5a79812f35c9c5cfea9ef1daf39d0ab646aa96fb91776d0e
 permissions:
-  contents: read
+  contents: write
 jobs:
   verify:
     runs-on: ubuntu-24.04
